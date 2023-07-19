@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description='Retinaface Training')
 parser.add_argument('--training_dataset', default='./data/widerface/train/label.txt', help='Training dataset directory')
 parser.add_argument('--network', default='mobile0.25', help='Backbone network mobile0.25 or resnet50')
 parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
+parser.add_argument('--warmup_epoch', default=-1, type=int, help='number of warmup epochs')
 parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--resume_net', default=None, help='resume net for retraining')
@@ -147,7 +148,7 @@ def adjust_learning_rate(optimizer, gamma, epoch, step_index, iteration, epoch_s
     # Adapted from PyTorch Imagenet example:
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    warmup_epoch = -1
+    warmup_epoch = args.warmup_epoch
     if epoch <= warmup_epoch:
         lr = 1e-6 + (initial_lr-1e-6) * iteration / (epoch_size * warmup_epoch)
     else:

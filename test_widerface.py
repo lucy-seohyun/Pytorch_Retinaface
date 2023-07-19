@@ -86,7 +86,7 @@ if __name__ == '__main__':
 
     # testing dataset
     testset_folder = args.dataset_folder
-    testset_list = args.dataset_folder[:-7] + "wider_val.txt"
+    testset_list = args.dataset_folder[:-7] + "label.txt"
 
     with open(testset_list, 'r') as fr:
         test_dataset = fr.read().split()
@@ -95,8 +95,9 @@ if __name__ == '__main__':
     _t = {'forward_pass': Timer(), 'misc': Timer()}
 
     # testing begin
-    for i, img_name in enumerate(test_dataset):
+    for i, img_name in [(i, img_name) for i, img_name in enumerate(test_dataset) if img_name[0] != '#']:
         image_path = testset_folder + img_name
+        print(image_path)
         img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
         img = np.float32(img_raw)
 
