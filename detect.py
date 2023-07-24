@@ -11,6 +11,11 @@ import cv2
 from models.retinaface import RetinaFace
 from utils.box_utils import decode, decode_landm
 import time
+import tqdm
+import glob
+import pandas as pd
+
+np.random.seed(42)
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
@@ -22,8 +27,10 @@ parser.add_argument('--confidence_threshold', default=0.02, type=float, help='co
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
-parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
-parser.add_argument('--vis_thres', default=0.6, type=float, help='visualization_threshold')
+parser.add_argument('--vis_thres', default=0.2, type=float, help='visualization_threshold')
+parser.add_argument('--data_path', required=True, type=str, help='test files location')
+parser.add_argument('--save_path', required=True, type=str, help='result image destination directory')
+parser.add_argument('--sampling', required=False, type=bool, default=False, help='whether to test only a sample of images')
 args = parser.parse_args()
 
 
@@ -75,17 +82,26 @@ if __name__ == '__main__':
     net = load_model(net, args.trained_model, args.cpu)
     net.eval()
     print('Finished loading model!')
-    print(net)
+
     cudnn.benchmark = True
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
     resize = 1
 
+    images = [x for x in glob.glob(os.path.join(args.data_path, '**/*'), recursive=True) if not os.path.isdir(x)]
+    if args.sampling:
+    	images = np.random.choice(images, replace=False, size=10)
     # testing begin
-    for i in range(100):
-        image_path = "./curve/test.jpg"
+    bbox_fd = open(os.path.join(args.save_path, 'bbox.csv'), 'w')
+    bbox_fd.write('filename, x1, y1, x2, y2\n')
+
+    for image_path in tqdm.tqdm(images):
         img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        if img_raw is None:
+        	continue
+        image_name = os.path.basename(image_path)
+        image_dir = os.path.basename(os.path.dirname(image_path))
 
         img = np.float32(img_raw)
 
@@ -99,7 +115,6 @@ if __name__ == '__main__':
 
         tic = time.time()
         loc, conf, landms = net(img)  # forward pass
-        print('net forward time: {:.4f}'.format(time.time() - tic))
 
         priorbox = PriorBox(cfg, image_size=(im_height, im_width))
         priors = priorbox.forward()
@@ -142,27 +157,35 @@ if __name__ == '__main__':
 
         dets = np.concatenate((dets, landms), axis=1)
 
+        blurred_img = cv2.blur(img_raw, (50, 50))
+
         # show image
-        if args.save_image:
-            for b in dets:
-                if b[4] < args.vis_thres:
-                    continue
-                text = "{:.4f}".format(b[4])
-                b = list(map(int, b))
-                cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
-                cx = b[0]
-                cy = b[1] + 12
-                cv2.putText(img_raw, text, (cx, cy),
-                            cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+        for b in dets:
+            if b[4] < args.vis_thres:
+                continue
+            text = "{:.4f}".format(b[4])
+            b = list(map(int, b))
+            cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
+            img_raw[b[1]:b[3], b[0]:b[2]] = blurred_img[b[1]:b[3], b[0]:b[2]]
+            bbox_fd.write(f'{os.path.join(image_dir, image_name)}, {b[0]}, {b[1]}, {b[2]}, {b[3]}\n')
+            """
+            cx = b[0]
+            cy = b[1] + 12
 
-                # landms
-                cv2.circle(img_raw, (b[5], b[6]), 1, (0, 0, 255), 4)
-                cv2.circle(img_raw, (b[7], b[8]), 1, (0, 255, 255), 4)
-                cv2.circle(img_raw, (b[9], b[10]), 1, (255, 0, 255), 4)
-                cv2.circle(img_raw, (b[11], b[12]), 1, (0, 255, 0), 4)
-                cv2.circle(img_raw, (b[13], b[14]), 1, (255, 0, 0), 4)
-            # save image
+            cv2.putText(img_raw, text, (cx, cy),
+                        cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
 
-            name = "test.jpg"
-            cv2.imwrite(name, img_raw)
+            # landms
+            cv2.circle(img_raw, (b[5], b[6]), 1, (0, 0, 255), 4)
+            cv2.circle(img_raw, (b[7], b[8]), 1, (0, 255, 255), 4)
+            cv2.circle(img_raw, (b[9], b[10]), 1, (255, 0, 255), 4)
+            cv2.circle(img_raw, (b[11], b[12]), 1, (0, 255, 0), 4)
+            cv2.circle(img_raw, (b[13], b[14]), 1, (255, 0, 0), 4)
+            
+            """
+        # save image	
+        name = os.path.join(args.save_path, image_dir, image_name)
+        os.makedirs(os.path.join(args.save_path, image_dir), exist_ok=True)
+        cv2.imwrite(name, img_raw)
 
+    bbox_fd.close()
